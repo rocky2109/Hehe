@@ -18,11 +18,11 @@ This Telegram bot allows users to generate a Classplus token by providing their 
 3. Add your bot token to `.env`.
 4. Install dependencies:
    ```bash
-   pip install -r requirements.txt
+   pip3 install -r requirements.txt
    ```
 5. Run the bot:
    ```bash
-   python bot.py
+   python3 bot.py
    ```
 
 Made with ❤️ for Classplus users.
