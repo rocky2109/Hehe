@@ -72,8 +72,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🔑 OTP received: <code>{otp}</code>\nVerifying...", parse_mode="HTML")
         token = verify_classplus(email, otp)
         if token:
-            await update.message.reply_text(f"🎉 Token:
-<code>{token}</code>", parse_mode="HTML")
+            await update.message.reply_text(f"🎉 Token:\n<code>{token}</code>", parse_mode="HTML")
         else:
             await update.message.reply_text("❌ OTP verification failed.")
     else:
