@@ -1,10 +1,6 @@
 import requests
 
-BASE_URL = "https://api.classplusapp.com"
-
-headers = {
-    "User-Agent": "ClassplusApp/1.4.39 (Android 11; SDK 30)",
-    "Content-Type": "application/json"
+url = 'https://dragoapi.vercel.app/classplus?link=' + url
 }
 
 def send_otp(email):
