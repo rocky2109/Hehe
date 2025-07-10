@@ -51,8 +51,8 @@ def verify_classplus(email, otp):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📧 Generating random email address...")
     username, domain, email = generate_email()
-    await update.message.reply_text("Use this email to login in Classplus:
-<code>{email}</code>", parse_mode="HTML")
+    await update.message.reply_text(Use this email to login in Classplus:
+<code>{email}</code>", parse_mode="HTML)
     await update.message.reply_text("⏳ Waiting for OTP...")
 
     otp = wait_for_otp(username, domain)
