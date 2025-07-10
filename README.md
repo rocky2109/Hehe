@@ -16,9 +16,10 @@ This Telegram bot allows users to generate a Classplus token by providing their 
 3. ```
    sudo apt update
 4. ```
- ```  sudo apt install python-is-python3```
-
- ```  python3 -m pip install -r requirements.txt```
+   sudo apt install python-is-python3
+ ``` 
+python3 -m pip install -r requirements.txt
+ ```
 
    ```bash
    cp .env.example .env
