@@ -1,8 +1,7 @@
 import os
 import requests
 import time
-import random
-import string
+import re
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from dotenv import load_dotenv
@@ -10,22 +9,20 @@ from dotenv import load_dotenv
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-def generate_email():
-    username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-    domain = "datingso.com"
-    return username, domain, f"{username}@{domain}"
+EMAIL = "sawodi6262"
+DOMAIN = "datingso.com"
+FULL_EMAIL = f"{EMAIL}@{DOMAIN}"
 
-def wait_for_otp(username, domain):
-    for _ in range(30):  # 1 minute max wait
-        inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
+def wait_for_otp():
+    for _ in range(30):
+        inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={EMAIL}&domain={DOMAIN}"
         resp = requests.get(inbox_url)
         messages = resp.json()
         if messages:
-            msg_id = messages[0]['id']
-            msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
+            msg_id = messages[0]["id"]
+            msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={EMAIL}&domain={DOMAIN}&id={msg_id}"
             msg_data = requests.get(msg_url).json()
             body = msg_data.get("body", "")
-            import re
             otp_match = re.search(r"\b(\d{4,6})\b", body)
             if otp_match:
                 return otp_match.group(1)
@@ -49,27 +46,23 @@ def verify_classplus(email, otp):
     return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📧 Generating random email address...")
-    username, domain, email = generate_email()
-    await update.message.reply_text("this email to login in Classplus:
-<code>{email}</code>", parse_mode="HTML")
-    await update.message.reply_text("⏳ Waiting for OTP...")
+    await update.message.reply_text(f"📧 Use this fixed email in Classplus:\n<code>{FULL_EMAIL}</code>", parse_mode="HTML")
+    await update.message.reply_text("⏳ Waiting for OTP to arrive...")
 
-    otp = wait_for_otp(username, domain)
+    otp = wait_for_otp()
     if otp:
-        await update.message.reply_text(f"✅ OTP received: <code>{otp}</code>
-Verifying...", parse_mode="HTML")
-        access_token = verify_classplus(email, otp)
-        if access_token:
-            await update.message.reply_text(f"🎉 Token generated:
-<code>{access_token}</code>", parse_mode="HTML")
+        await update.message.reply_text(f"✅ OTP received: <code>{otp}</code>\nVerifying...", parse_mode="HTML")
+        token = verify_classplus(FULL_EMAIL, otp)
+        if token:
+            await update.message.reply_text(f"🎉 Token:\n<code>{token}</code>", parse_mode="HTML")
         else:
-            await update.message.reply_text("❌ OTP verification failed. Try again.")
+            await update.message.reply_text("❌ OTP verification failed.")
     else:
         await update.message.reply_text("❌ OTP not received. Try again later.")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    print("Bot is running...")
+    print("Bot running...")
     app.run_polling()
+    
