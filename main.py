@@ -1,14 +1,15 @@
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import asyncio
-from bot import run_bot  # ✅ Now this works!
+from bot import run_bot  # ✅ This will work now
 
 def start_dummy_server():
     class Handler(SimpleHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"🤖 Telegram Bot is running on Render!")
+            # ✅ FIX: Encode emoji text to bytes
+            self.wfile.write("🤖 Telegram Bot is running on Render!".encode("utf-8"))
 
     port = 10000
     print(f"🌐 Dummy HTTP server running on port {port}")
