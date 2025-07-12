@@ -116,7 +116,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Process cancelled. Use /start to begin again.")
     return ConversationHandler.END
 
-# Start bot
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 conv_handler = ConversationHandler(
@@ -129,13 +128,24 @@ conv_handler = ConversationHandler(
 
 app.add_handler(conv_handler)
 
+# Fallback reply for any text
+async def debug_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Bot is alive. You said: " + update.message.text)
+
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, debug_reply))
+
+# Needed for Render (used by main.py)
 async def run_bot():
-    logging.info("🤖 Bot is starting...")
     await app.initialize()
     await app.start()
+    me = await app.bot.get_me()
+    print(f"✅ Connected as @{me.username}")
+    print("✅ Waiting for updates...")
     await app.updater.start_polling()
     await app.updater.idle()
 
+# Run standalone if local
 if __name__ == "__main__":
     import asyncio
     asyncio.run(run_bot())
+
