@@ -3,59 +3,51 @@ import re
 import time
 import logging
 import requests
-from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ConversationHandler,
-    ContextTypes,
-    filters,
-)
+from pyrogram import Client, filters
+from pyrogram.types import Message
 
-# Load environment variables
-
+# Load BOT_TOKEN from Render environment
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+API_ID = int(os.environ.get("API_ID", 12345))       # Add real value in Render
+API_HASH = os.environ.get("API_HASH", "abc123")     # Add real value in Render
 
 # Logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 
-# State definition
-ASK_EMAIL = 0
-user_email_map = {}
+# Bot setup
+bot = Client(
+    name="classplusbot",
+    bot_token=BOT_TOKEN,
+    api_id=API_ID,
+    api_hash=API_HASH
+)
 
-# Extract username and domain from email
-def extract_username_domain(email):
+# OTP extract function
+def extract_otp(email):
     if "@" not in email:
         return None, None
-    username, domain = email.split("@", 1)
-    return username, domain
+    return email.split("@", 1)
 
-# Wait and extract OTP from email
 def wait_for_otp(username, domain):
     logging.info(f"Waiting for OTP for {username}@{domain}")
     inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
-
-    for attempt in range(15):
+    
+    for _ in range(15):
         try:
-            resp = requests.get(inbox_url)
-            messages = resp.json()
+            messages = requests.get(inbox_url).json()
             if messages:
                 msg_id = messages[0]["id"]
-                msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
-                msg_data = requests.get(msg_url).json()
-                body = msg_data.get("body", "")
-                otp_match = re.search(r"\b(\d{4,6})\b", body)
+                msg_data = requests.get(
+                    f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
+                ).json()
+                otp_match = re.search(r"\b(\d{4,6})\b", msg_data.get("body", ""))
                 if otp_match:
                     return otp_match.group(1)
         except Exception as e:
-            logging.error(f"Error fetching OTP: {e}")
+            logging.error(f"OTP error: {e}")
         time.sleep(2)
-
     return None
 
-# Verify OTP with Classplus
 def verify_classplus(email, otp):
     payload = {
         "email": email,
@@ -76,76 +68,35 @@ def verify_classplus(email, otp):
         logging.error(f"Classplus verification error: {e}")
     return None
 
-# /start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Welcome! Please send a temporary email address (e.g. `abc@1secmail.com`, `@kzccv.com`, etc.):",
-        parse_mode="Markdown"
-    )
-    return ASK_EMAIL
+# Start command
+@bot.on_message(filters.command("start"))
+async def start_command(client, message: Message):
+    await message.reply_text("👋 Welcome! Send a temporary email like `abc@1secmail.com`, `@kzccv.com`, etc.", parse_mode="markdown")
 
-# Get email and process OTP
-async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    email = update.message.text.strip()
-    username, domain = extract_username_domain(email)
+# Handle all plain text as email
+@bot.on_message(filters.text & ~filters.command)
+async def email_handler(client, message: Message):
+    email = message.text.strip()
+    username, domain = extract_otp(email)
 
     if not username or not domain:
-        await update.message.reply_text("⚠️ Invalid email format. Please send a valid email like `name@domain.com`.", parse_mode="Markdown")
-        return ASK_EMAIL
+        await message.reply_text("❌ Invalid email. Format must be: `name@domain.com`", parse_mode="markdown")
+        return
 
-    user_email_map[update.effective_user.id] = (email, username, domain)
-
-    await update.message.reply_text(f"✅ Email set: `{email}`\nPlease send the OTP to this email via Classplus.", parse_mode="Markdown")
-    await update.message.reply_text("⏳ Waiting for OTP... (Timeout: 30 sec)")
+    await message.reply_text(f"📨 Using email: `{email}`\nSend OTP to this email.", parse_mode="markdown")
+    await message.reply_text("⏳ Waiting for OTP...")
 
     otp = wait_for_otp(username, domain)
     if otp:
-        await update.message.reply_text(f"🔑 OTP received: `{otp}`\n🛡 Verifying with Classplus...", parse_mode="Markdown")
+        await message.reply_text(f"🔑 OTP received: `{otp}`\nVerifying with Classplus...", parse_mode="markdown")
         token = verify_classplus(email, otp)
         if token:
-            await update.message.reply_text(f"🎉 Access Token:\n`{token}`", parse_mode="Markdown")
+            await message.reply_text(f"🎉 Access Token:\n`{token}`", parse_mode="markdown")
         else:
-            await update.message.reply_text("❌ Verification failed. The OTP might be wrong or expired.")
+            await message.reply_text("❌ OTP verification failed.")
     else:
-        await update.message.reply_text("❌ OTP not received in time. Please try again.")
+        await message.reply_text("❌ OTP not received. Try again later.")
 
-    return ConversationHandler.END
-
-# /cancel command
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Process cancelled. Use /start to begin again.")
-    return ConversationHandler.END
-
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        ASK_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
-
-app.add_handler(conv_handler)
-
-# Fallback reply for any text
-async def debug_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Bot is alive. You said: " + update.message.text)
-
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, debug_reply))
-
-# Needed for Render (used by main.py)
-async def run_bot():
-    await app.initialize()
-    await app.start()
-    me = await app.bot.get_me()
-    print(f"✅ Connected as @{me.username}")
-    print("✅ Waiting for updates...")
-    await app.updater.start_polling()
-    await app.updater.idle()
-
-# Run standalone if local
+# Run bot
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(run_bot())
-
+    bot.run()
