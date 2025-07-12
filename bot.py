@@ -34,24 +34,32 @@ import time
 import logging
 
 def wait_for_otp_1secmail(username: str, domain: str, retries: int = 15, delay: int = 2) -> str | None:
-    """
-    Polls 1secmail.com for new emails and extracts OTP (4–6 digit code).
-    """
+    import requests, re, time, logging
     logging.info(f"📬 Waiting for OTP at {username}@{domain}")
-    
+
     inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
 
     for attempt in range(retries):
         try:
             response = requests.get(inbox_url)
-            messages = response.json()
+            if response.status_code != 200:
+                logging.warning(f"⚠️ Inbox fetch failed (HTTP {response.status_code})")
+                time.sleep(delay)
+                continue
+
+            try:
+                messages = response.json()
+            except Exception:
+                logging.error(f"❌ Invalid JSON in inbox: {response.text}")
+                time.sleep(delay)
+                continue
 
             if messages:
-                message_id = messages[0]["id"]
-                read_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={message_id}"
-                message_data = requests.get(read_url).json()
+                msg_id = messages[0]["id"]
+                msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
+                msg_data = requests.get(msg_url).json()
 
-                body = message_data.get("body", "") or message_data.get("textBody", "")
+                body = msg_data.get("body", "") or msg_data.get("textBody", "")
                 otp_match = re.search(r"\b\d{4,6}\b", body)
 
                 if otp_match:
@@ -62,7 +70,7 @@ def wait_for_otp_1secmail(username: str, domain: str, retries: int = 15, delay: 
                     logging.warning("📭 Message received but no OTP found.")
 
         except Exception as e:
-            logging.error(f"❌ Error reading inbox: {e}")
+            logging.error(f"OTP error: {e}")
 
         time.sleep(delay)
 
