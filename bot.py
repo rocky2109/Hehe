@@ -117,17 +117,25 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # Start bot
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("start", start)],
+    states={
+        ASK_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+app.add_handler(conv_handler)
+
+async def run_bot():
+    logging.info("🤖 Bot is starting...")
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            ASK_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    app.add_handler(conv_handler)
-    logging.info("🤖 Bot is running...")
-    app.run_polling()
+    import asyncio
+    asyncio.run(run_bot())
