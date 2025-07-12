@@ -28,53 +28,47 @@ def extract_otp(email):
         return None, None
     return email.split("@", 1)
 
-def get_mail_tm_otp(email):
-    try:
-        session = requests.Session()
+import requests
+import re
+import time
+import logging
 
-        # Extract domain & username
-        username, domain = email.split("@", 1)
+def wait_for_otp_1secmail(username: str, domain: str, retries: int = 15, delay: int = 2) -> str | None:
+    """
+    Polls 1secmail.com for new emails and extracts OTP (4–6 digit code).
+    """
+    logging.info(f"📬 Waiting for OTP at {username}@{domain}")
+    
+    inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
 
-        # Get domain ID (needed to register inbox)
-        domains_resp = session.get("https://api.mail.tm/domains").json()
-        domain_id = None
-        for d in domains_resp["hydra:member"]:
-            if d["domain"] == domain:
-                domain_id = d["id"]
-                break
+    for attempt in range(retries):
+        try:
+            response = requests.get(inbox_url)
+            messages = response.json()
 
-        if not domain_id:
-            logging.warning("Unsupported domain on Mail.tm")
-            return None
+            if messages:
+                message_id = messages[0]["id"]
+                read_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={message_id}"
+                message_data = requests.get(read_url).json()
 
-        # Create inbox (username@domain)
-        account = {
-            "address": email,
-            "password": "fakepassword123"  # Required but not verified
-        }
+                body = message_data.get("body", "") or message_data.get("textBody", "")
+                otp_match = re.search(r"\b\d{4,6}\b", body)
 
-        session.post("https://api.mail.tm/accounts", json=account)
+                if otp_match:
+                    otp = otp_match.group(0)
+                    logging.info(f"✅ OTP found: {otp}")
+                    return otp
+                else:
+                    logging.warning("📭 Message received but no OTP found.")
 
-        # Login to inbox
-        token_resp = session.post("https://api.mail.tm/token", json=account).json()
-        token = token_resp.get("token")
-        headers = {"Authorization": f"Bearer {token}"}
+        except Exception as e:
+            logging.error(f"❌ Error reading inbox: {e}")
 
-        # Check for messages
-        for _ in range(15):
-            messages = session.get("https://api.mail.tm/messages", headers=headers).json()
-            if messages.get("hydra:member"):
-                msg_id = messages["hydra:member"][0]["id"]
-                msg = session.get(f"https://api.mail.tm/messages/{msg_id}", headers=headers).json()
-                body = msg.get("text", "")
-                otp = re.search(r"\b(\d{4,6})\b", body)
-                if otp:
-                    return otp.group(1)
-            time.sleep(2)
+        time.sleep(delay)
 
-    except Exception as e:
-        logging.error(f"Mail.tm OTP error: {e}")
+    logging.warning("⌛ Timed out waiting for OTP.")
     return None
+
 
 def verify_classplus(email, otp):
     payload = {
