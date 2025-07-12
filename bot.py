@@ -1,50 +1,37 @@
 import os
 import re
 import time
-import logging
 import requests
-from pyrogram import Client, filters
-from pyrogram.types import Message
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
+from dotenv import load_dotenv
 
-# Load BOT_TOKEN from Render environment
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-API_ID = int(os.environ.get("API_ID", ))       # Add real value in Render
-API_HASH = os.environ.get("API_HASH", "")     # Add real value in Render
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Logging
-logging.basicConfig(level=logging.INFO)
+# States
+ASK_EMAIL = 0
+user_email_map = {}
 
-# Bot setup
-bot = Client(
-    name="classplusbot",
-    bot_token=BOT_TOKEN,
-    api_id=API_ID,
-    api_hash=API_HASH
-)
-
-# OTP extract function
-def extract_otp(email):
+def extract_username_domain(email):
     if "@" not in email:
         return None, None
-    return email.split("@", 1)
+    parts = email.split("@")
+    return parts[0], parts[1]
 
 def wait_for_otp(username, domain):
-    logging.info(f"Waiting for OTP for {username}@{domain}")
-    inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
-    
-    for _ in range(15):
-        try:
-            messages = requests.get(inbox_url).json()
-            if messages:
-                msg_id = messages[0]["id"]
-                msg_data = requests.get(
-                    f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
-                ).json()
-                otp_match = re.search(r"\b(\d{4,6})\b", msg_data.get("body", ""))
-                if otp_match:
-                    return otp_match.group(1)
-        except Exception as e:
-            logging.error(f"OTP error: {e}")
+    for _ in range(30):
+        inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
+        resp = requests.get(inbox_url)
+        messages = resp.json()
+        if messages:
+            msg_id = messages[0]["id"]
+            msg_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
+            msg_data = requests.get(msg_url).json()
+            body = msg_data.get("body", "")
+            otp_match = re.search(r"\b(\d{4,6})\b", body)
+            if otp_match:
+                return otp_match.group(1)
         time.sleep(2)
     return None
 
@@ -59,45 +46,55 @@ def verify_classplus(email, otp):
         "x-application-id": "classplus",
         "content-type": "application/json"
     }
-
-    try:
-        r = requests.post("https://api.classplusapp.com/v2/customer/otp/verify", json=payload, headers=headers)
-        if r.status_code == 200:
-            return r.json().get("data", {}).get("accessToken")
-    except Exception as e:
-        logging.error(f"Classplus verification error: {e}")
+    r = requests.post("https://api.classplusapp.com/v2/customer/otp/verify", json=payload, headers=headers)
+    if r.status_code == 200:
+        return r.json().get("data", {}).get("accessToken")
     return None
 
-# Start command
-@bot.on_message(filters.command("start"))
-async def start_command(client, message: Message):
-    await message.reply_text("👋 Welcome! Send a temporary email like `abc@1secmail.com`, `@kzccv.com`, etc.", parse_mode="markdown")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Send your temp email (e.g. something@1secmail.com or @kzccv.com or @datingso.com):")
+    return ASK_EMAIL
 
-# Handle all plain text as e
-@bot.on_message(filters.text & ~filters.command(["start", "cancel"]))
-async def email_handler(client, message: Message):
-
-    email = message.text.strip()
-    username, domain = extract_otp(email)
-
+async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    email = update.message.text.strip()
+    username, domain = extract_username_domain(email)
     if not username or not domain:
-        await message.reply_text("❌ Invalid email. Format must be: `name@domain.com`", parse_mode="markdown")
-        return
+        await update.message.reply_text("⚠️ Invalid email format. Please send a valid email like name@domain.com")
+        return ASK_EMAIL
 
-    await message.reply_text(f"📨 Using email: `{email}`\nSend OTP to this email.", parse_mode="markdown")
-    await message.reply_text("⏳ Waiting for OTP...")
+    user_email_map[update.effective_user.id] = (email, username, domain)
+
+    await update.message.reply_text(f"✅ Using email: <code>{email}</code>\nNow send OTP to this email from Classplus.", parse_mode="HTML")
+    await update.message.reply_text("⏳ Waiting for OTP...")
 
     otp = wait_for_otp(username, domain)
     if otp:
-        await message.reply_text(f"🔑 OTP received: `{otp}`\nVerifying with Classplus...", parse_mode="markdown")
+        await update.message.reply_text(f"🔑 OTP received: <code>{otp}</code>\nVerifying...", parse_mode="HTML")
         token = verify_classplus(email, otp)
         if token:
-            await message.reply_text(f"🎉 Access Token:\n`{token}`", parse_mode="markdown")
+            await update.message.reply_text(f"🎉 Token:\n<code>{token}</code>", parse_mode="HTML")
         else:
-            await message.reply_text("❌ OTP verification failed.")
+            await update.message.reply_text("❌ OTP verification failed.")
     else:
-        await message.reply_text("❌ OTP not received. Try again later.")
+        await update.message.reply_text("❌ OTP not received. Try again.")
 
-# Run bot
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Cancelled.")
+    return ConversationHandler.END
+
 if __name__ == "__main__":
-    bot.run()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            ASK_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+
+    app.add_handler(conv)
+    print("Bot is running...")
+    app.run_polling()
