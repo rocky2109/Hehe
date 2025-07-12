@@ -28,24 +28,52 @@ def extract_otp(email):
         return None, None
     return email.split("@", 1)
 
-def wait_for_otp(username, domain):
-    logging.info(f"Waiting for OTP for {username}@{domain}")
-    inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={username}&domain={domain}"
-    
-    for _ in range(15):
-        try:
-            messages = requests.get(inbox_url).json()
-            if messages:
-                msg_id = messages[0]["id"]
-                msg_data = requests.get(
-                    f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
-                ).json()
-                otp_match = re.search(r"\b(\d{4,6})\b", msg_data.get("body", ""))
-                if otp_match:
-                    return otp_match.group(1)
-        except Exception as e:
-            logging.error(f"OTP error: {e}")
-        time.sleep(2)
+def get_mail_tm_otp(email):
+    try:
+        session = requests.Session()
+
+        # Extract domain & username
+        username, domain = email.split("@", 1)
+
+        # Get domain ID (needed to register inbox)
+        domains_resp = session.get("https://api.mail.tm/domains").json()
+        domain_id = None
+        for d in domains_resp["hydra:member"]:
+            if d["domain"] == domain:
+                domain_id = d["id"]
+                break
+
+        if not domain_id:
+            logging.warning("Unsupported domain on Mail.tm")
+            return None
+
+        # Create inbox (username@domain)
+        account = {
+            "address": email,
+            "password": "fakepassword123"  # Required but not verified
+        }
+
+        session.post("https://api.mail.tm/accounts", json=account)
+
+        # Login to inbox
+        token_resp = session.post("https://api.mail.tm/token", json=account).json()
+        token = token_resp.get("token")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Check for messages
+        for _ in range(15):
+            messages = session.get("https://api.mail.tm/messages", headers=headers).json()
+            if messages.get("hydra:member"):
+                msg_id = messages["hydra:member"][0]["id"]
+                msg = session.get(f"https://api.mail.tm/messages/{msg_id}", headers=headers).json()
+                body = msg.get("text", "")
+                otp = re.search(r"\b(\d{4,6})\b", body)
+                if otp:
+                    return otp.group(1)
+            time.sleep(2)
+
+    except Exception as e:
+        logging.error(f"Mail.tm OTP error: {e}")
     return None
 
 def verify_classplus(email, otp):
@@ -71,7 +99,7 @@ def verify_classplus(email, otp):
 # /start command
 @bot.on_message(filters.command("start"))
 async def start_command(client, message: Message):
-    await message.reply_text("👋 Welcome! Send a temporary email like abc@1secmail.com or any valid domain like @kzccv.com etc.")
+    await message.reply_text("👋 Hey Send a temporary email like abc@1secmail.com or any valid domain like @kzccv.com etc.")
 
 # Handle all plain text as email input
 @bot.on_message(filters.text & ~filters.command(["start"]))
