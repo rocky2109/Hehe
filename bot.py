@@ -74,7 +74,7 @@ async def start_command(client, message: Message):
     await message.reply_text("👋 Welcome! Send a temporary email like `abc@1secmail.com`, `@kzccv.com`, etc.", parse_mode="markdown")
 
 # Handle all plain text as email
-@bot.on_message(filters.text & ~filters.command)
+@bot.on_message(filters.TEXT & ~filters.COMMAND)
 async def email_handler(client, message: Message):
     email = message.text.strip()
     username, domain = extract_otp(email)
