@@ -8,8 +8,8 @@ from pyrogram.types import Message
 
 # Load BOT_TOKEN from Render environment
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-API_ID = int(os.environ.get("API_ID", 12345))       # Add real value in Render
-API_HASH = os.environ.get("API_HASH", "abc123")     # Add real value in Render
+API_ID = int(os.environ.get("API_ID", ))       # Add real value in Render
+API_HASH = os.environ.get("API_HASH", "")     # Add real value in Render
 
 # Logging
 logging.basicConfig(level=logging.INFO)
